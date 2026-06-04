@@ -249,6 +249,11 @@ st.markdown("""
         justify-content: center;
         flex-shrink: 0;
     }
+    
+    /* Tabel permission */
+    .perm-table { width: 100%; border-collapse: collapse; }
+    .perm-table th { text-align: left; padding: 10px; background: #F8F8F8; border-bottom: 1px solid #E2E2E2; }
+    .perm-table td { padding: 8px 10px; border-bottom: 1px solid #F0F0F0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -309,7 +314,6 @@ def get_chat_history(phone):
     return df[df['customer_phone'] == phone].sort_values('created_at', ascending=True)
 
 def format_phone_number(nomor):
-    """Format nomor ke internasional 628xxx"""
     nomor = str(nomor).strip().replace("+", "").replace(" ", "").replace("-", "")
     if nomor.startswith("0"):
         nomor = "62" + nomor[1:]
@@ -318,7 +322,6 @@ def format_phone_number(nomor):
     return nomor
 
 def send_whatsapp_message(to_number, message):
-    """Kirim pesan WhatsApp via Cloud API dan simpan ke database"""
     if not ACCESS_TOKEN or not PHONE_NUMBER_ID:
         return False, "Token atau Phone Number ID tidak ditemukan"
     
@@ -363,8 +366,9 @@ with st.sidebar:
     st.markdown('<div class="menu-section">MENU UTAMA</div>', unsafe_allow_html=True)
     
     menu = st.radio(
-        "",
-        ["Dashboard", "AI Inbox", "AI Outbound", "Kontak / Leads", "Analitik"],
+        "Menu Utama",
+        ["Overview", "AI Inbox", "AI Outbound", "Contacts", "Analytics", "User Management", "Campaign", "Templates", "Recipient Lists"],
+        format_func=lambda x: x,
         label_visibility="collapsed",
         index=0
     )
@@ -393,8 +397,8 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# ============ DASHBOARD ============
-if menu == "Dashboard":
+# ============ OVERVIEW ============
+if menu == "Overview":
     stats = load_stats()
     df = load_conversations()
     contacts = load_contacts()
@@ -402,7 +406,7 @@ if menu == "Dashboard":
     st.markdown(f"""
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-            <h2 style="margin: 0; color: #222222;">Dashboard</h2>
+            <h2 style="margin: 0; color: #222222;">Overview</h2>
             <p style="margin: 5px 0 0 0; color: #9A9A9A; font-size: 12px;">— {datetime.now().strftime('%A, %d %B %Y')}</p>
         </div>
     </div>
@@ -502,7 +506,7 @@ if menu == "Dashboard":
 
 # ============ AI INBOX ============
 elif menu == "AI Inbox":
-    st.markdown("<h2>AI Inbox</h2>", unsafe_allow_html=True)
+    st.markdown("<h2><i class='fas fa-inbox'></i> AI Inbox</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kelola percakapan dengan customer secara real-time</p>", unsafe_allow_html=True)
     
     contacts = load_contacts()
@@ -638,11 +642,7 @@ elif menu == "AI Inbox":
                         )
                     
                     with col_btn:
-                        submitted = st.form_submit_button(
-                            "Kirim",
-                            use_container_width=True,
-                            type="primary"
-                        )
+                        submitted = st.form_submit_button("Kirim", use_container_width=True, type="primary")
                     
                     if submitted and user_message:
                         to_number = selected['phone']
@@ -674,7 +674,7 @@ elif menu == "AI Inbox":
 
 # ============ AI OUTBOUND ============
 elif menu == "AI Outbound":
-    st.markdown("<h2>AI Outbound</h2>", unsafe_allow_html=True)
+    st.markdown("<h2><i class='fas fa-bullhorn'></i> AI Outbound</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kirim pesan massal ke customer</p>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -710,9 +710,9 @@ elif menu == "AI Outbound":
             else:
                 st.error("Harap isi pesan broadcast")
 
-# ============ KONTAK / LEADS ============
-elif menu == "Kontak / Leads":
-    st.markdown("<h2>Kontak / Leads</h2>", unsafe_allow_html=True)
+# ============ CONTACTS ============
+elif menu == "Contacts":
+    st.markdown("<h2><i class='fas fa-address-book'></i> Contacts / Leads</h2>", unsafe_allow_html=True)
     contacts = load_contacts()
     if not contacts.empty:
         st.dataframe(contacts[['name', 'phone', 'company', 'message_count', 'last_chat']], use_container_width=True)
@@ -721,9 +721,9 @@ elif menu == "Kontak / Leads":
     else:
         st.info("Belum ada kontak")
 
-# ============ ANALITIK ============
-elif menu == "Analitik":
-    st.markdown("<h2>Analitik</h2>", unsafe_allow_html=True)
+# ============ ANALYTICS ============
+elif menu == "Analytics":
+    st.markdown("<h2><i class='fas fa-chart-line'></i> Analytics</h2>", unsafe_allow_html=True)
     df = load_conversations()
     if not df.empty:
         st.subheader("Tren Percakapan")
@@ -747,3 +747,324 @@ elif menu == "Analitik":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Belum ada data analitik")
+
+# ============ USER MANAGEMENT ============
+elif menu == "User Management":
+    st.markdown("<h2><i class='fas fa-users'></i> User Management</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kelola user, role, dan akses sistem</p>", unsafe_allow_html=True)
+    
+    from database import get_users
+    
+    tab_users, tab_add_user, tab_roles = st.tabs(["Daftar User", "Tambah User", "Role Management"])
+    
+    with tab_users:
+        users = get_users()
+        if users:
+            display_users = []
+            for u in users:
+                display_users.append({
+                    "ID": u['id'],
+                    "Username": u['username'],
+                    "Email": u['email'],
+                    "Phone": u['phone'],
+                    "Role": "Supervisor" if u['role'] == 'supervisor' else "Agent",
+                    "Status": "Active" if u['is_active'] else "Inactive"
+                })
+            st.dataframe(display_users, use_container_width=True)
+        else:
+            st.info("Belum ada user")
+    
+    with tab_add_user:
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                username = st.text_input("Username")
+                email = st.text_input("Email")
+                phone = st.text_input("Nomor WhatsApp")
+            with col2:
+                role = st.selectbox("Role", ["agent", "supervisor"])
+                password = st.text_input("Password", type="password")
+                confirm_password = st.text_input("Konfirmasi Password", type="password")
+            
+            if st.form_submit_button("Tambah User", use_container_width=True):
+                if password == confirm_password:
+                    st.success(f"User {username} berhasil ditambahkan!")
+                    st.rerun()
+                else:
+                    st.error("Password tidak cocok")
+    
+    with tab_roles:
+        st.subheader("Role & Permission")
+        
+        st.markdown("""
+        <table class="perm-table">
+            <tr><th>Fitur</th><th>Supervisor</th><th>Agent</th></tr>
+            <tr><td>Dashboard Overview</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td></tr>
+            <tr><td>AI Inbox</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td></tr>
+            <tr><td>Kirim Pesan Manual</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td></tr>
+            <tr><td>Assign Chat ke Agent</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-times-circle" style="color: #C8102E;"></i></td></tr>
+            <tr><td>Broadcast Campaign</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-times-circle" style="color: #C8102E;"></i></td></tr>
+            <tr><td>Buat Template</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-times-circle" style="color: #C8102E;"></i></td></tr>
+            <tr><td>Upload Recipient List</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-times-circle" style="color: #C8102E;"></i></td></tr>
+            <tr><td>Kelola User</td><td><i class="fas fa-check-circle" style="color: #1A7A4A;"></i></td><td><i class="fas fa-times-circle" style="color: #C8102E;"></i></td></tr>
+        </table>
+        """, unsafe_allow_html=True)
+
+# ============ CAMPAIGN ============
+elif menu == "Campaign":
+    st.markdown("<h2><i class='fas fa-bullhorn'></i> Campaign Management</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Buat dan kelola campaign broadcast</p>", unsafe_allow_html=True)
+    
+    from database import get_campaigns, create_campaign, get_templates, get_recipient_lists, send_broadcast_campaign
+    
+    tab_campaigns, tab_create = st.tabs(["Daftar Campaign", "Buat Campaign Baru"])
+    
+    with tab_campaigns:
+        campaigns = get_campaigns()
+        if campaigns:
+            # Header tabel
+            col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1, 1, 0.8, 0.6])
+            with col1: st.markdown("**Nama Campaign**")
+            with col2: st.markdown("**Template**")
+            with col3: st.markdown("**Kategori**")
+            with col4: st.markdown("**Status**")
+            with col5: st.markdown("**Terkirim**")
+            with col6: st.markdown("**Aksi**")
+            st.divider()
+            
+            for c in campaigns:
+                col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1, 1, 0.8, 0.6])
+                
+                with col1:
+                    st.write(c['name'])
+                with col2:
+                    st.write(c['template_name'])
+                with col3:
+                    st.write(c['category'])
+                with col4:
+                    # Status dengan icon
+                    if c['status'] == 'completed':
+                        status_display = '<i class="fas fa-check-circle" style="color: #1A7A4A;"></i> Completed'
+                    elif c['status'] == 'scheduled':
+                        status_display = '<i class="fas fa-calendar-alt" style="color: #D97706;"></i> Scheduled'
+                    elif c['status'] == 'draft':
+                        status_display = '<i class="fas fa-pen-alt" style="color: #9A9A9A;"></i> Draft'
+                    else:
+                        status_display = f'<i class="fas fa-times-circle" style="color: #C8102E;"></i> {c["status"]}'
+                    st.markdown(status_display, unsafe_allow_html=True)
+                with col5:
+                    st.write(f"{c.get('sent_count', 0)}/{c.get('total_recipients', 0)}")
+                with col6:
+                    if c['status'] in ['draft', 'scheduled']:
+                        if st.button("Kirim", key=f"send_campaign_{c['id']}", use_container_width=False):
+                            with st.spinner("Mengirim campaign..."):
+                                success, message = send_broadcast_campaign(c['id'])
+                                if success:
+                                    st.success(f"✅ {message}")
+                                    st.cache_data.clear()
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {message}")
+                    else:
+                        st.button("✅", key=f"disabled_btn_{c['id']}", disabled=True, use_container_width=False)
+                
+                st.divider()
+        else:
+            st.info("Belum ada campaign. Buat campaign baru di tab sebelah kanan!")
+    
+    with tab_create:
+        with st.form("create_campaign_form"):
+            campaign_name = st.text_input("Nama Campaign", placeholder="Contoh: Promo Ramadhan 2025")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                templates = get_templates()
+                template_options = [t['name'] for t in templates] if templates else []
+                template_name = st.selectbox("Pilih Template", template_options if template_options else ["Belum ada template"])
+            
+            with col2:
+                recipient_lists = get_recipient_lists()
+                list_options = [l['name'] for l in recipient_lists] if recipient_lists else ["Belum ada recipient list"]
+                recipient_list = st.selectbox("Pilih Recipient List", list_options if list_options else ["Belum ada list"])
+            
+            schedule_date = st.date_input("Jadwalkan", value=datetime.now().date())
+            schedule_time = st.time_input("Waktu", value=datetime.now().time())
+            
+            if st.form_submit_button("Buat Campaign", use_container_width=True):
+                if campaign_name and template_name != "Belum ada template" and recipient_list != "Belum ada recipient list":
+                    campaign_data = {
+                        'name': campaign_name,
+                        'template_name': template_name,
+                        'category': "Marketing",
+                        'recipient_list': recipient_list,
+                        'total_recipients': 0,
+                        'created_by': 1,
+                        'scheduled_at': f"{schedule_date} {schedule_time}"
+                    }
+                    
+                    try:
+                        create_campaign(campaign_data)
+                        st.success(f"Campaign '{campaign_name}' berhasil dibuat!")
+                        st.cache_data.clear()
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Gagal membuat campaign: {e}")
+                else:
+                    if not campaign_name:
+                        st.error("Nama campaign wajib diisi")
+                    elif template_name == "Belum ada template":
+                        st.error("Belum ada template. Buat template dulu di menu Templates")
+                    elif recipient_list == "Belum ada recipient list":
+                        st.error("Belum ada recipient list. Upload recipient list dulu di menu Recipient Lists")
+                        
+# ============ TEMPLATES ============
+elif menu == "Templates":
+    st.markdown("<h2><i class='fas fa-file-alt'></i> Message Templates</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Buat dan kelola template pesan</p>", unsafe_allow_html=True)
+    
+    from database import get_templates, create_template
+    
+    tab_templates, tab_create = st.tabs(["Daftar Template", "Buat Template Baru"])
+    
+    with tab_templates:
+        templates = get_templates()
+        if templates:
+            display_templates = []
+            for t in templates:
+                display_templates.append({
+                    "Nama Template": t['name'],
+                    "Tipe": t.get('type', '-'),
+                    "Kategori": t.get('category', '-'),
+                    "Status": "Approved" if t.get('status') == 'approved' else "Draft",
+                    "Bahasa": t.get('language', 'id').upper(),
+                    "Dibuat Oleh": t.get('creator', '-')
+                })
+            st.dataframe(display_templates, use_container_width=True)
+        else:
+            st.info("Belum ada template. Buat template baru di tab sebelah kanan!")
+    
+    with tab_create:
+        with st.form("create_template_form"):
+            template_name = st.text_input("Nama Template", placeholder="Contoh: welcome_message")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                template_type = st.selectbox("Tipe", ["Campaign", "Follow up", "Authentication"])
+            with col2:
+                template_category = st.selectbox("Kategori", ["Marketing", "Utility", "Authentication"])
+            with col3:
+                language = st.selectbox("Bahasa", ["id", "en", "ms"])
+            
+            header = st.text_input("Header (opsional)", placeholder="Contoh: Halo {{1}}")
+            content = st.text_area("Isi Pesan", height=150, placeholder="Contoh: Selamat datang {{1}} di Indotrading...")
+            footer = st.text_input("Footer (opsional)", placeholder="Contoh: Terima kasih")
+            
+            if st.form_submit_button("Simpan Template", use_container_width=True):
+                if template_name and content:
+                    template_data = {
+                        'name': template_name,
+                        'type': template_type,
+                        'category': template_category,
+                        'language': language,
+                        'content': content,
+                        'header': header,
+                        'footer': footer,
+                        'created_by': 1
+                    }
+                    
+                    try:
+                        create_template(template_data)
+                        st.success(f"Template '{template_name}' berhasil disimpan!")
+                        st.cache_data.clear()
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Gagal menyimpan template: {e}")
+                else:
+                    st.error("Nama template dan isi pesan wajib diisi")
+
+# ============ RECIPIENT LISTS ============
+elif menu == "Recipient Lists":
+    st.markdown("<h2><i class='fas fa-list'></i> Recipient Lists</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kelola daftar penerima broadcast</p>", unsafe_allow_html=True)
+    
+    from database import get_recipient_lists, create_recipient_list
+    import os
+    import csv
+    
+    # Buat folder uploads jika belum ada
+    if not os.path.exists("uploads"):
+        os.makedirs("uploads")
+    
+    tab_lists, tab_upload = st.tabs(["Daftar Recipient", "Upload File"])
+    
+    with tab_lists:
+        lists = get_recipient_lists()
+        if lists:
+            display_lists = []
+            for l in lists:
+                display_lists.append({
+                    "Nama List": l['name'],
+                    "Channel": l['channel'],
+                    "Kontak": l['contacts_count'],
+                    "Status": "Completed" if l['upload_status'] == 'completed' else "⏳ Processing",
+                    "Sumber": l.get('source', '-'),
+                    "Tanggal": l['created_at'][:10] if l['created_at'] else '-'
+                })
+            st.dataframe(display_lists, use_container_width=True)
+        else:
+            st.info("Belum ada recipient list")
+    
+    with tab_upload:
+        with st.form("upload_recipient_form", clear_on_submit=True):
+            list_name = st.text_input("Nama List", placeholder="Contoh: Customer Promo Ramadhan")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                channel = st.selectbox("Channel", ["WhatsApp", "SMS", "Email"])
+            with col2:
+                source = st.selectbox("Sumber", ["File upload", "CSV import", "Spreadsheet sync"])
+            
+            uploaded_file = st.file_uploader("Upload File", type=['csv', 'xlsx', 'txt'])
+            
+            if st.form_submit_button("Upload & Proses", use_container_width=True):
+                if list_name and uploaded_file:
+                    # SIMPAN FILE KE DISK DENGAN PATH LENGKAP
+                    file_extension = uploaded_file.name.split('.')[-1]
+                    saved_filename = f"uploads/{list_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_extension}"
+                    
+                    with open(saved_filename, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Hitung jumlah kontak di file
+                    contacts_count = 0
+                    try:
+                        with open(saved_filename, 'r', encoding='utf-8') as f:
+                            reader = csv.DictReader(f)
+                            for row in reader:
+                                contacts_count += 1
+                    except Exception as e:
+                        st.warning(f"File terupload, tapi tidak bisa membaca jumlah kontak: {e}")
+                    
+                    recipient_data = {
+                        'name': list_name,
+                        'channel': channel,
+                        'contacts_count': contacts_count,
+                        'upload_status': 'completed',
+                        'source': source,
+                        'file_path': saved_filename,  
+                        'created_by': 1
+                    }
+                    
+                    try:
+                        create_recipient_list(recipient_data)
+                        st.success(f"List '{list_name}' berhasil diupload! ({contacts_count} kontak)")
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Gagal upload: {e}")
+                else:
+                    st.error("Nama list dan file wajib diisi")
