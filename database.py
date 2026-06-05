@@ -1,4 +1,4 @@
-# database.py
+import hashlib
 import sqlite3
 from datetime import datetime
 import json
@@ -50,8 +50,10 @@ def init_db():
             password_hash TEXT,
             role TEXT CHECK(role IN ('supervisor', 'agent')),
             is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP
+            last_login TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
         )
     ''')
     
@@ -127,9 +129,9 @@ def init_db():
     
     # Insert default admin user (password: admin123)
     cursor.execute('''
-        INSERT OR IGNORE INTO users (username, email, phone, password_hash, role)
-        VALUES ('admin', 'admin@indotrading.com', '628118131010', 'admin123', 'supervisor')
-    ''')
+        INSERT OR IGNORE INTO users (username, email, phone, password_hash, role, created_by)
+        VALUES ('admin', 'admin@indotrading.com', '628118131010', ?, 'supervisor', NULL)
+    ''', (hashlib.sha256('admin123'.encode()).hexdigest(),))
     
     conn.commit()
     conn.close()

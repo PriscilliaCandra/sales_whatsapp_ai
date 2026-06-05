@@ -1,8 +1,9 @@
-# ai_handler.py
 import requests
 import json
 import time
 import re
+import os
+import glob
 
 from config import OPENROUTER_API_KEY
 
@@ -50,7 +51,7 @@ class AIHandler:
         }
         
         try:
-            # 🔥 PERBESAR TIMEOUT MENJADI 120 DETIK
+            # PERBESAR TIMEOUT MENJADI 120 DETIK
             response = requests.post(self.api_url, json=payload, timeout=120)
             
             if response.status_code == 200:
@@ -78,14 +79,32 @@ class AIHandler:
         except Exception as e:
             print(f"   ❌ Exception: {type(e).__name__}: {e}")
             return "Maaf, terjadi kesalahan teknis. Tim kami akan segera menghubungi Anda."
-
+    
+    def load_knowledge_base(self):
+        """Load semua knowledge dari folder knowledge/"""
+        knowledge_text = ""
+        if os.path.exists("knowledge"):
+            files = glob.glob("knowledge/*.txt")
+            for file in files:
+                try:
+                    with open(file, 'r', encoding='utf-8') as f:
+                        knowledge_text += f.read() + "\n\n"
+                except:
+                    pass
+        return knowledge_text
+    
     def get_response(self, user_message, customer_name="Customer", customer_company=""):
+        # Load knowledge base
+        knowledge = self.load_knowledge_base()
+        
         prompt = f"""Kamu adalah asisten sales dari PT Indotrading.com, platform B2B untuk cari supplier.
+
+{knowledge if knowledge else ''}
 
 Customer: {customer_name} dari {customer_company}
 Pesan: "{user_message}"
 
-Balas dengan ramah, singkat (3-4 kalimat), dan dalam bahasa Indonesia. Langsung berikan jawaban, tanpa penjelasan tambahan.
+Balas dengan ramah, singkat (3-4 kalimat), dan dalam bahasa Indonesia. Gunakan informasi dari knowledge base jika relevan.
 
 Balasan:"""
         return self._get_ollama_response(prompt)

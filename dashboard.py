@@ -1,4 +1,3 @@
-# dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -10,6 +9,8 @@ import time
 import re
 from config import ACCESS_TOKEN, PHONE_NUMBER_ID
 from database import save_admin_message, update_daily_stats
+from auth import is_authenticated, is_supervisor, get_agents, login_required
+from login import show_login, show_logout
 
 # Konfigurasi halaman
 st.set_page_config(
@@ -17,6 +18,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ============ CEK LOGIN DARI QUERY PARAMETERS ATAU SESSION ============
+# Cek query parameters
+query_params = st.query_params
+
+if 'authenticated' not in st.session_state:
+    if 'auth' in query_params and query_params['auth'] == 'true':
+        st.session_state.authenticated = True
+        st.session_state.user_name = query_params.get('user', 'Admin')
+        st.session_state.user_role = query_params.get('role', 'supervisor')
+    else:
+        st.session_state.authenticated = False
+
+# ============ JIKA BELUM LOGIN ============
+if not st.session_state.authenticated:
+    show_login()
+    st.stop()
+
+# Hapus query parameters setelah diproses (biar bersih)
+st.query_params.clear()
 
 # ============ AMBIL KONFIGURASI ============
 WHATSAPP_API_URL = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
@@ -255,10 +276,24 @@ st.markdown("""
     .perm-table th { text-align: left; padding: 10px; background: #F8F8F8; border-bottom: 1px solid #E2E2E2; }
     .perm-table td { padding: 8px 10px; border-bottom: 1px solid #F0F0F0; }
 </style>
+<script>
+    // Simpan login ke localStorage
+    if (typeof(Storage) !== "undefined") {
+        // Cek apakah ada data login di localStorage
+        const savedAuth = localStorage.getItem("auth");
+        const savedUser = localStorage.getItem("user");
+        const savedRole = localStorage.getItem("role");
+        
+        if (savedAuth === "true" && savedUser && !window.location.search.includes("auth")) {
+            // Redirect ke dashboard dengan query params
+            window.location.href = window.location.pathname + "?auth=true&user=" + savedUser + "&role=" + savedRole;
+        }
+    }
+</script>
 """, unsafe_allow_html=True)
 
 # ============ FUNGSI DATABASE ============
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_conversations():
     try:
         conn = sqlite3.connect('chat_history.db')
@@ -367,7 +402,7 @@ with st.sidebar:
     
     menu = st.radio(
         "Menu Utama",
-        ["Overview", "AI Inbox", "AI Outbound", "Contacts", "Analytics", "User Management", "Campaign", "Templates", "Recipient Lists"],
+        ["Overview", "AI Inbox", "AI Outbound", "Contacts", "Analytics", "User Management", "Campaign", "Templates", "Recipient Lists", "AI Agent"],
         format_func=lambda x: x,
         label_visibility="collapsed",
         index=0
@@ -396,6 +431,7 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
+    show_logout()
 
 # ============ OVERVIEW ============
 if menu == "Overview":
@@ -509,6 +545,13 @@ elif menu == "AI Inbox":
     st.markdown("<h2><i class='fas fa-inbox'></i> AI Inbox</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kelola percakapan dengan customer secara real-time</p>", unsafe_allow_html=True)
     
+    # ============ TOMBOL REFRESH DI ATAS ============
+    col_refresh1, col_refresh2 = st.columns([1, 2])
+    with col_refresh1:
+        if st.button("Refresh Chat", use_container_width=True, type="secondary"):
+            st.cache_data.clear()
+            st.rerun()
+    
     contacts = load_contacts()
     
     if not contacts.empty:
@@ -551,6 +594,7 @@ elif menu == "AI Inbox":
             if not selected.empty:
                 selected = selected.iloc[0]
                 
+                # ============ HEADER CHAT ============
                 st.markdown(f"""
                 <div style="background-color: #FCEAED; padding: 12px 16px; border-radius: 10px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -566,6 +610,30 @@ elif menu == "AI Inbox":
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # ============ ASSIGN CHAT KE AGENT (HANYA UNTUK SUPERVISOR) ============
+                if is_supervisor():
+                    with st.expander("Assign Chat ke Agent"):
+                        agents = get_agents()
+                        if agents:
+                            selected_agent = st.selectbox(
+                                "Pilih Agent",
+                                options=[(a['id'], a['username']) for a in agents],
+                                format_func=lambda x: x[1]
+                            )
+                            if st.button("Assign Chat", use_container_width=True):
+                                from database import assign_chat
+                                assign_chat(
+                                    conversation_id=None,
+                                    customer_phone=st.session_state.selected_contact_inbox,
+                                    assigned_to=selected_agent[0],
+                                    assigned_by=st.session_state.user_id
+                                )
+                                st.success(f"Chat diassign ke {selected_agent[1]}")
+                                st.rerun()
+                        else:
+                            st.info("Belum ada agent yang tersedia")
+                
+                # ============ CHAT HISTORY ============
                 chat_history = get_chat_history(st.session_state.selected_contact_inbox)
                 chat_container = st.container(height=350)
                 
@@ -627,7 +695,7 @@ elif menu == "AI Inbox":
                             </div>
                             """, unsafe_allow_html=True)
                 
-                # FORM KIRIM PESAN
+                # ============ FORM KIRIM PESAN ============
                 st.markdown('<div style="border-top: 1px solid #E2E2E2; padding: 12px; background: white; border-radius: 0 0 10px 10px;">', unsafe_allow_html=True)
                 
                 with st.form(key="send_message_form", clear_on_submit=True):
@@ -671,7 +739,7 @@ elif menu == "AI Inbox":
                 st.info("Pilih kontak dari daftar di sebelah kiri")
     else:
         st.info("Belum ada kontak. Customer akan muncul saat chat pertama!")
-
+        
 # ============ AI OUTBOUND ============
 elif menu == "AI Outbound":
     st.markdown("<h2><i class='fas fa-bullhorn'></i> AI Outbound</h2>", unsafe_allow_html=True)
@@ -753,24 +821,44 @@ elif menu == "User Management":
     st.markdown("<h2><i class='fas fa-users'></i> User Management</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Kelola user, role, dan akses sistem</p>", unsafe_allow_html=True)
     
-    from database import get_users
+    from auth import get_all_users, update_user_status, delete_user, register_user
     
     tab_users, tab_add_user, tab_roles = st.tabs(["Daftar User", "Tambah User", "Role Management"])
     
     with tab_users:
-        users = get_users()
+        users = get_all_users()
         if users:
-            display_users = []
             for u in users:
-                display_users.append({
-                    "ID": u['id'],
-                    "Username": u['username'],
-                    "Email": u['email'],
-                    "Phone": u['phone'],
-                    "Role": "Supervisor" if u['role'] == 'supervisor' else "Agent",
-                    "Status": "Active" if u['is_active'] else "Inactive"
-                })
-            st.dataframe(display_users, use_container_width=True)
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([1, 2, 2, 2, 1.5, 1, 1])
+                
+                with col1:
+                    st.write(u['id'])
+                with col2:
+                    st.write(u['username'])
+                with col3:
+                    st.write(u['email'])
+                with col4:
+                    st.write(u['phone'])
+                with col5:
+                    st.write("Supervisor" if u['role'] == 'supervisor' else "🤖 Agent")
+                with col6:
+                    if u['username'] != 'admin':  # Admin tidak bisa dinonaktifkan
+                        if u['is_active']:
+                            if st.button("Nonaktif", key=f"deact_{u['id']}"):
+                                update_user_status(u['id'], 0)
+                                st.rerun()
+                        else:
+                            if st.button("Aktifkan", key=f"act_{u['id']}"):
+                                update_user_status(u['id'], 1)
+                                st.rerun()
+                    else:
+                        st.write("✅ Active")
+                with col7:
+                    if u['username'] != 'admin':
+                        if st.button("🗑️", key=f"del_{u['id']}"):
+                            delete_user(u['id'])
+                            st.rerun()
+                st.divider()
         else:
             st.info("Belum ada user")
     
@@ -778,18 +866,25 @@ elif menu == "User Management":
         with st.form("add_user_form"):
             col1, col2 = st.columns(2)
             with col1:
-                username = st.text_input("Username")
-                email = st.text_input("Email")
-                phone = st.text_input("Nomor WhatsApp")
+                new_username = st.text_input("Username")
+                new_email = st.text_input("Email")
+                new_phone = st.text_input("Nomor WhatsApp")
             with col2:
-                role = st.selectbox("Role", ["agent", "supervisor"])
-                password = st.text_input("Password", type="password")
-                confirm_password = st.text_input("Konfirmasi Password", type="password")
+                new_role = st.selectbox("Role", ["agent", "supervisor"])
+                new_password = st.text_input("Password", type="password")
+                new_confirm = st.text_input("Konfirmasi Password", type="password")
             
             if st.form_submit_button("Tambah User", use_container_width=True):
-                if password == confirm_password:
-                    st.success(f"User {username} berhasil ditambahkan!")
-                    st.rerun()
+                if new_password == new_confirm:
+                    success, result = register_user(
+                        new_username, new_email, new_phone, new_role, new_password, 
+                        st.session_state.user_id
+                    )
+                    if success:
+                        st.success(f"User {new_username} berhasil ditambahkan!")
+                        st.rerun()
+                    else:
+                        st.error(f"Gagal: {result}")
                 else:
                     st.error("Password tidak cocok")
     
@@ -1068,3 +1163,203 @@ elif menu == "Recipient Lists":
                         st.error(f"Gagal upload: {e}")
                 else:
                     st.error("Nama list dan file wajib diisi")
+                    
+# ============ AI AGENT MENU ============
+elif menu == "AI Agent":
+    st.markdown("<h2><i class='fas fa-robot'></i> AI Agent Configuration</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Konfigurasi AI dan Knowledge Base</p>", unsafe_allow_html=True)
+    
+    # Tab layout
+    tab_knowledge, tab_settings, tab_status = st.tabs(["Knowledge Base", "AI Settings", "Status"])
+    
+    # ============ TAB 1: KNOWLEDGE BASE ============
+    with tab_knowledge:
+        st.subheader("Knowledge Base")
+        st.markdown("Upload file yang berisi informasi produk, kebijakan, atau FAQ untuk meningkatkan akurasi AI.")
+        
+        # Form upload file
+        with st.form("knowledge_form", clear_on_submit=True):
+            uploaded_file = st.file_uploader(
+                "Upload File Knowledge",
+                type=['txt', 'pdf', 'csv', 'md', 'json'],
+                help="File akan digunakan sebagai pengetahuan tambahan untuk AI"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                knowledge_name = st.text_input("Nama Knowledge", placeholder="Contoh: product_catalog_2025")
+            with col2:
+                knowledge_category = st.selectbox("Kategori", ["Produk", "Kebijakan", "FAQ", "Prosedur", "Lainnya"])
+            
+            if st.form_submit_button("Upload Knowledge", use_container_width=True):
+                if uploaded_file and knowledge_name:
+                    # Simpan file ke folder knowledge
+                    import os
+                    if not os.path.exists("knowledge"):
+                        os.makedirs("knowledge")
+                    
+                    file_path = f"knowledge/{knowledge_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                    
+                    # Baca isi file
+                    content = uploaded_file.getvalue().decode('utf-8')
+                    
+                    with open(file_path, "w", encoding='utf-8') as f:
+                        f.write(f"Title: {knowledge_name}\n")
+                        f.write(f"Category: {knowledge_category}\n")
+                        f.write(f"Date: {datetime.now()}\n")
+                        f.write("="*50 + "\n")
+                        f.write(content)
+                    
+                    st.success(f"Knowledge '{knowledge_name}' berhasil diupload!")
+                    
+                    # Simpan ke database (optional)
+                    # save_knowledge_to_db(knowledge_name, knowledge_category, file_path)
+                    
+                else:
+                    st.error("Nama knowledge dan file wajib diisi")
+        
+        # Tampilkan daftar knowledge yang sudah diupload
+        st.markdown("---")
+        st.subheader("Daftar Knowledge")
+        
+        import os
+        if os.path.exists("knowledge"):
+            knowledge_files = os.listdir("knowledge")
+            if knowledge_files:
+                for kf in knowledge_files:
+                    with open(f"knowledge/{kf}", 'r', encoding='utf-8') as f:
+                        first_line = f.readline().strip()
+                        title = first_line.replace("Title: ", "") if first_line.startswith("Title:") else kf
+                    
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"{title}")
+                    with col2:
+                        st.caption(f"{datetime.fromtimestamp(os.path.getmtime(f'knowledge/{kf}')).strftime('%d/%m/%Y')}")
+                    with col3:
+                        if st.button("Delete", key=f"del_knowledge_{kf}"):
+                            os.remove(f"knowledge/{kf}")
+                            st.rerun()
+            else:
+                st.info("Belum ada knowledge. Upload file untuk memulai.")
+        else:
+            os.makedirs("knowledge")
+            st.info("Folder knowledge telah dibuat. Upload file untuk memulai.")
+    
+    # ============ TAB 2: AI SETTINGS ============
+    with tab_settings:
+        st.subheader("Pengaturan AI")
+        
+        # Simpan ke session state untuk persistensi
+        if 'ai_temperature' not in st.session_state:
+            st.session_state.ai_temperature = 0.7
+        if 'ai_max_tokens' not in st.session_state:
+            st.session_state.ai_max_tokens = 300
+        if 'ai_system_prompt' not in st.session_state:
+            st.session_state.ai_system_prompt = "Kamu adalah asisten sales dari PT Indotrading.com, platform B2B untuk cari supplier. Balas dengan ramah dan profesional."
+        
+        # Temperature
+        st.markdown("#### Temperature")
+        temperature = st.slider(
+            "Temperature (0 = deterministik, 1 = kreatif)",
+            min_value=0.0,
+            max_value=1.0,
+            value=st.session_state.ai_temperature,
+            step=0.05
+        )
+        st.caption("Nilai rendah = jawaban konsisten, Nilai tinggi = jawaban lebih kreatif dan bervariasi")
+        
+        # Max Tokens
+        st.markdown("#### Max Tokens")
+        max_tokens = st.number_input(
+            "Max Tokens (panjang maksimal balasan)",
+            min_value=50,
+            max_value=2000,
+            value=st.session_state.ai_max_tokens,
+            step=50
+        )
+        st.caption("Balasan yang lebih panjang = lebih detail, tapi lebih lambat")
+        
+        # System Prompt
+        st.markdown("#### System Prompt")
+        system_prompt = st.text_area(
+            "System Prompt (instruksi untuk AI)",
+            value=st.session_state.ai_system_prompt,
+            height=150
+        )
+        st.caption("Instruksi ini akan mempengaruhi gaya bicara dan pengetahuan AI")
+        
+        # Save button
+        if st.button("Simpan Pengaturan", use_container_width=True):
+            st.session_state.ai_temperature = temperature
+            st.session_state.ai_max_tokens = max_tokens
+            st.session_state.ai_system_prompt = system_prompt
+            
+            # Simpan ke file config
+            with open("ai_config.json", "w") as f:
+                import json
+                json.dump({
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "system_prompt": system_prompt
+                }, f)
+            
+            st.success("Pengaturan AI berhasil disimpan!")
+            
+            # Update ai_handler.py (opsional)
+            st.info("ℹPerubahan akan berlaku setelah restart webhook server")
+        
+        # Reset button
+        if st.button("Reset ke Default", use_container_width=True):
+            st.session_state.ai_temperature = 0.7
+            st.session_state.ai_max_tokens = 300
+            st.session_state.ai_system_prompt = "Kamu adalah asisten sales dari PT Indotrading.com, platform B2B untuk cari supplier. Balas dengan ramah dan profesional."
+            st.rerun()
+    
+    # ============ TAB 3: STATUS ============
+    with tab_status:
+        st.subheader("Status AI Agent")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Koneksi AI")
+            try:
+                import requests
+                response = requests.get("http://localhost:11434/api/tags", timeout=5)
+                if response.status_code == 200:
+                    st.success("Online")
+                else:
+                    st.error("Offline")
+            except:
+                st.error("Ollama Tidak Terhubung")
+                st.caption("Jalankan 'ollama serve' di terminal")
+        
+        with col2:
+            st.markdown("#### Statistik Knowledge")
+            import os
+            if os.path.exists("knowledge"):
+                files = os.listdir("knowledge")
+                st.metric("Total Knowledge", len(files))
+                
+                # Hitung total ukuran
+                total_size = sum(os.path.getsize(f"knowledge/{f}") for f in files) if files else 0
+                st.caption(f"Total ukuran: {total_size / 1024:.1f} KB")
+            else:
+                st.metric("Total Knowledge", 0)
+        
+        # Model yang sedang digunakan
+        st.markdown("#### Model AI")
+        try:
+            from ai_handler import AIHandler
+            ai = AIHandler()
+            st.info(f"Model: **{ai.model}**")
+            st.caption("Model AI yang digunakan untuk menjawab chat")
+        except:
+            st.warning("Model tidak dapat di-load")
+        
+        # Tombol restart AI
+        if st.button("Restart AI Connection", use_container_width=True):
+            st.cache_data.clear()
+            st.success("Cache AI dibersihkan!")
+            st.rerun()
