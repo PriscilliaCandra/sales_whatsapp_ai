@@ -422,7 +422,7 @@ with st.sidebar:
             <span style="font-size: 14px; font-weight: 600;">{stats['ai_handled']}</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-            <span style="font-size: 11px; color: #9A9A9A;"><i class="fas fa-user-shield"></i> Admin Sent</span>
+            <span style="font-size: 11px; color: #9A9A9A;"><i class="fas fa-user-shield"></i> Human Handled</span>
             <span style="font-size: 14px; font-weight: 600;">{stats['admin_sent']}</span>
         </div>
         <div class="divider"></div>
@@ -678,19 +678,25 @@ elif menu == "AI Inbox":
                             """, unsafe_allow_html=True)
                         
                         # PESAN ADMIN (kanan dengan avatar admin)
-                        if msg['status'] == 'admin_sent' and msg['direction'] == 'outgoing':
+                        if msg['status'].startswith('admin_sent') and msg['direction'] == 'outgoing':
+                            # Ambil nama admin dari status (format: admin_sent_NamaAdmin)
+                            if '_' in msg['status']:
+                                admin_name = msg['status'].replace('admin_sent_', '')
+                            else:
+                                admin_name = 'Admin'
+                            
                             st.markdown(f"""
                             <div style="display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-bottom: 16px;">
                                 <div style="max-width: 70%; text-align: right;">
                                     <div style="background-color: #1976D2; color: white; padding: 10px 14px; border-radius: 18px; border-bottom-right-radius: 4px;">
-                                        {msg['message']}
+                                        <i class="fas fa-user-shield"></i> {msg['message']}
                                     </div>
-                                    <div style="font-size: 10px; color: #999; margin-top: 4px;">
-                                        <i class="far fa-clock"></i> {time_str} • Admin
+                                    <div style="font-size: 10px; color: #999; margin-top: 4px; text-align: right;">
+                                        <i class="far fa-clock"></i> {time_str} • 👤 {admin_name}
                                     </div>
                                 </div>
                                 <div class="avatar-admin">
-                                    <i class="fas fa-user-shield" style="color: #1976D2; font-size: 14px;"></i>
+                                    <i class="fas fa-user-circle" style="color: #1976D2; font-size: 18px;"></i>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
@@ -1019,24 +1025,75 @@ elif menu == "Templates":
     st.markdown("<h2><i class='fas fa-file-alt'></i> Message Templates</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color: #9A9A9A; margin-bottom: 20px;'>— Buat dan kelola template pesan</p>", unsafe_allow_html=True)
     
-    from database import get_templates, create_template
+    from database import get_templates, create_template, sync_template_status_from_meta, update_template_status, delete_template
     
     tab_templates, tab_create = st.tabs(["Daftar Template", "Buat Template Baru"])
     
+    # Di bagian tab_templates, tambahkan kolom Action untuk edit status
     with tab_templates:
+        col_sync, col_empty = st.columns([1, 3])
+        with col_sync:
+            if st.button("Sync from Meta", use_container_width=True, type="primary"):
+                with st.spinner("Menyinkronkan template dari Meta..."):
+                    success, message = sync_template_status_from_meta()
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+                        
         templates = get_templates()
+        
         if templates:
-            display_templates = []
             for t in templates:
-                display_templates.append({
-                    "Nama Template": t['name'],
-                    "Tipe": t.get('type', '-'),
-                    "Kategori": t.get('category', '-'),
-                    "Status": "Approved" if t.get('status') == 'approved' else "Draft",
-                    "Bahasa": t.get('language', 'id').upper(),
-                    "Dibuat Oleh": t.get('creator', '-')
-                })
-            st.dataframe(display_templates, use_container_width=True)
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1.5, 1.5, 1.5, 1, 1.5, 1])
+                
+                with col1:
+                    st.write(t['name'])
+                with col2:
+                    st.write(t.get('type', '-'))
+                with col3:
+                    st.write(t.get('category', '-'))
+                # Di dalam loop templates
+                with col4:
+                    current_status = t.get('status', 'draft')
+                    
+                    # Pilihan status
+                    status_options = ['draft', 'approved', 'rejected', 'pending']
+                    status_labels = {
+                        'draft': 'Draft',
+                        'approved': 'Approved',
+                        'rejected': 'Rejected',
+                        'pending': 'Pending'
+                    }
+                    
+                    # Index current
+                    current_index = status_options.index(current_status) if current_status in status_options else 0
+                    
+                    # Selectbox compact
+                    selected_status = st.selectbox(
+                        "Status",
+                        options=status_options,
+                        format_func=lambda x: status_labels.get(x, x),
+                        index=current_index,
+                        key=f"status_{t['id']}",
+                        label_visibility="collapsed"
+                    )
+                    
+                    if selected_status != current_status:
+                        from database import update_template_status
+                        update_template_status(t['id'], selected_status)
+                        st.rerun()
+                with col5:
+                    st.write(t.get('language', 'id').upper())
+                with col6:
+                    st.write(t.get('creator', '-'))
+                with col7:
+                    if st.button("Delete", key=f"del_template_{t['id']}"):
+                        from database import delete_template
+                        delete_template(t['id'])
+                        st.rerun()
+                st.divider()
         else:
             st.info("Belum ada template. Buat template baru di tab sebelah kanan!")
     

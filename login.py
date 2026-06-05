@@ -5,35 +5,54 @@ from auth import authenticate_user, register_user
 def show_login():
     st.markdown("""
     <style>
-    .login-container {
-        max-width: 400px;
-        margin: 100px auto;
-        padding: 30px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    }
-    .login-header {
-        text-align: center;
-        margin-bottom: 30px;
-    }
-    .login-logo {
-        width: 60px;
-        height: 60px;
-        background: #C8102E;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
+    /* Pusatkan tab */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
         justify-content: center;
-        margin: 0 auto 15px;
-        color: white;
-        font-size: 24px;
-        font-weight: bold;
+    }
+    
+    /* Styling tab aktif */
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: 500;
+        padding: 8px 16px;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #C8102E;
+        border-bottom-color: #C8102E;
+    }
+    
+    /* Pusatkan form */
+    .stForm {
+        max-width: 400px;
+        margin: 0 auto;
+    }
+    
+    /* Lebarkan tombol */
+    .stButton button {
+        width: 100%;
+    }
+    
+    /* Input styling */
+    .stTextInput > div {
+        max-width: 100%;
+    }
+    
+    .stTextInput input {
+        border-radius: 8px;
+        border: 1px solid #E2E2E2;
+        padding: 8px 12px;
     }
     </style>
+    
+    <div style="text-align: center; margin-bottom: 30px;">
+        <div style="width: 60px; height: 60px; background: #C8102E; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px; color: white; font-size: 24px; font-weight: bold;">IT</div>
+        <h2 style="margin: 0; color: #222;">Indotrading AI</h2>
+        <p style="color: #999; font-size: 14px;">Sales Dashboard</p>
+    </div>
     """, unsafe_allow_html=True)
     
-    # Hapus query parameters yang mungkin tersisa
     st.query_params.clear()
     
     tab1, tab2 = st.tabs(["Login", "Register"])
@@ -48,10 +67,12 @@ def show_login():
                     user = authenticate_user(username, password)
                     if user:
                         st.session_state.authenticated = True
+                        st.session_state.user_id = user['id']
                         st.session_state.user_name = user['username']
+                        st.session_state.user_email = user['email']
+                        st.session_state.user_phone = user['phone']
                         st.session_state.user_role = user['role']
                         
-                        # Simpan ke localStorage via JavaScript
                         st.markdown(f"""
                         <script>
                             localStorage.setItem("auth", "true");
@@ -61,16 +82,16 @@ def show_login():
                         </script>
                         """, unsafe_allow_html=True)
                     else:
-                        st.error("Username atau password salah")
+                        st.error("❌ Username atau password salah")
                 else:
-                    st.warning("Harap isi username dan password")
+                    st.warning("⚠️ Harap isi username dan password")
     
     with tab2:
         with st.form("register_form"):
-            reg_username = st.text_input("Username", placeholder="Buat username", key="reg_username")
+            reg_username = st.text_input("Username", placeholder="Buat username")
             reg_email = st.text_input("Email", placeholder="email@example.com")
             reg_phone = st.text_input("Nomor WhatsApp", placeholder="628xxxxxxxxxx")
-            reg_password = st.text_input("Password", type="password", placeholder="Buat password", key="reg_password")
+            reg_password = st.text_input("Password", type="password", placeholder="Buat password")
             reg_confirm = st.text_input("Konfirmasi Password", type="password", placeholder="Ulangi password")
             
             if st.form_submit_button("Daftar", use_container_width=True):
@@ -80,13 +101,13 @@ def show_login():
                             reg_username, reg_email, reg_phone, 'agent', reg_password, 1
                         )
                         if success:
-                            st.success("Pendaftaran berhasil! Silakan login.")
+                            st.success("✅ Pendaftaran berhasil! Silakan login.")
                         else:
-                            st.error(f"Gagal mendaftar: {result}")
+                            st.error(f"❌ Gagal mendaftar: {result}")
                     else:
-                        st.error("Password tidak cocok")
+                        st.error("❌ Password tidak cocok")
                 else:
-                    st.warning("Harap isi semua field")
+                    st.warning("⚠️ Harap isi semua field")
 
 def show_logout():
     with st.sidebar:
@@ -109,10 +130,15 @@ def show_logout():
         """, unsafe_allow_html=True)
         
         if st.button("Logout", use_container_width=True):
-            # Clear session state
             for key in ['authenticated', 'user_id', 'user_name', 'user_email', 'user_phone', 'user_role']:
                 if key in st.session_state:
                     del st.session_state[key]
-            # Clear query parameters
             st.query_params.clear()
+            st.markdown("""
+            <script>
+                localStorage.removeItem("auth");
+                localStorage.removeItem("user");
+                localStorage.removeItem("role");
+            </script>
+            """, unsafe_allow_html=True)
             st.rerun()

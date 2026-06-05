@@ -171,13 +171,16 @@ def save_admin_message(customer_phone, message):
             customer_company = row[1] or ""
     except:
         pass
+
+    import streamlit as st
+    admin_name = st.session_state.get('user_name', 'Admin')
     
     cursor.execute('''
         INSERT INTO conversations 
         (customer_name, customer_phone, customer_company, message, reply, direction, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (customer_name, customer_phone, customer_company, 
-          message, "", "outgoing", "admin_sent", datetime.now()))
+          message, "", "outgoing", f"admin_sent_{admin_name}", datetime.now()))
     
     conn.commit()
     conn.close()
@@ -451,7 +454,15 @@ def send_broadcast_campaign(campaign_id):
             "type": "template",
             "template": {
                 "name": template_name,
-                "language": {"code": "en"}
+                "language": {"code": "en"},
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [
+                            {"type": "text", "text": "Customer"}  
+                        ]
+                    }
+                ]
             }
         }
         
@@ -640,6 +651,57 @@ def get_assigned_chats(agent_id, status='open'):
     conn.close()
     return assignments
 
+def sync_template_status_from_meta():
+    """Sinkronisasi status template dari Meta API menggunakan WABA ID"""
+    from config import ACCESS_TOKEN, WABA_ID
+    import requests
+    
+    url = f"https://graph.facebook.com/v20.0/{WABA_ID}/message_templates"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    
+    try:
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            templates_meta = data.get('data', [])
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            for t_meta in templates_meta:
+                template_name = t_meta.get('name')
+                template_status = t_meta.get('status', 'draft').lower()
+                
+                cursor.execute('''
+                    UPDATE templates SET status = ? WHERE name = ?
+                ''', (template_status, template_name))
+            
+            conn.commit()
+            conn.close()
+            return True, f"✅ Sync selesai. {len(templates_meta)} template diupdate."
+        else:
+            error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+            return False, f"❌ Gagal sync: {error_msg}"
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
+
+def update_template_status(template_id, status):
+    """Update status template"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE templates SET status = ? WHERE id = ?", (status, template_id))
+    conn.commit()
+    conn.close()
+
+def delete_template(template_id):
+    """Hapus template berdasarkan ID"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+    conn.commit()
+    conn.close()
+    
 if __name__ == "__main__":
     init_db()
     print("✅ Database initialized!")
